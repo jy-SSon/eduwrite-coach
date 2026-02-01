@@ -4,16 +4,19 @@ import { SYSTEM_PROMPT } from "../constants";
 
 export class GeminiService {
   /**
-   * Generates reflective records based on student input data.
-   * Following the "API Key Selection" guidelines: Create a new GoogleGenAI instance right before making an API call.
+   * Generates reflective records. Automatically switches to offline mode if internet is unavailable.
    */
   async generateRecords(inputData: any): Promise<any> {
-    // Create instance right before API call to ensure use of the most current API key.
+    // Check if browser is offline
+    if (!navigator.onLine) {
+      console.log("Offline mode detected. Using local template engine.");
+      return this.generateOffline(inputData);
+    }
+
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     try {
       const response = await ai.models.generateContent({
-        // Using gemini-3-pro-preview as scientific inquiry reports are complex text tasks.
         model: "gemini-3-pro-preview",
         contents: [{ 
           parts: [{ 
@@ -45,23 +48,95 @@ export class GeminiService {
         },
       });
 
-      // Directly access the text property of GenerateContentResponse.
       const text = response.text;
       if (!text) {
-        throw new Error("AI가 응답을 생성하지 못했습니다. 다시 시도해 주세요.");
+        throw new Error("AI 응답 없음");
       }
 
       return JSON.parse(text.trim());
     } catch (error: any) {
-      console.error("Gemini API Error:", error);
-      
-      // Handle key re-selection if the API returns a 'Requested entity was not found' error.
-      if (error?.message?.includes("Requested entity was not found")) {
-        throw new Error("API 키 설정에 문제가 있습니다. 키를 다시 선택해 주세요.");
-      }
-      
-      throw new Error(error?.message || "AI 서비스 호출 중 오류가 발생했습니다.");
+      console.error("Gemini API Error, falling back to offline engine:", error);
+      return this.generateOffline(inputData);
     }
+  }
+
+  /**
+   * Offline generation engine: Constructs a structured document based on raw inputs.
+   */
+  private generateOffline(data: any): any {
+    const type = data.target_doc;
+    const profile = data.student_profile;
+    let title = "";
+    let content = "";
+
+    if (type === 'self') {
+      const inputs = data.self_eval_inputs;
+      title = `${profile.subject} 교과 활동 자기평가서 (${profile.name})`;
+      content = `
+        <h1>${title}</h1>
+        <table border="1" style="border-collapse: collapse; width: 100%; border: 0.15mm solid black; margin-bottom: 20px;">
+          <tr><th>교과목</th><td>${profile.subject}</td><th>활동명</th><td>${profile.activityName}</td></tr>
+          <tr><th>성명</th><td>${profile.name}</td><th>기간</th><td>${profile.period}</td></tr>
+        </table>
+        <h2>1. 탐구 동기 및 목적</h2>
+        <p>${inputs.motivation}</p>
+        <h2>2. 주요 활동 및 역할</h2>
+        <p>${inputs.process}</p>
+        <h2>3. 문제 해결 과정</h2>
+        <p>${inputs.troubleshooting}</p>
+        <h2>4. 배운 점 및 성취</h2>
+        <p>${inputs.achievement}</p>
+        <h2>5. 향후 계획</h2>
+        <p>${inputs.vision}</p>
+        <p style="color: #666; font-size: 0.8rem; margin-top: 30px;">* 본 문서는 오프라인 모드에서 기본 템플릿으로 생성되었습니다.</p>
+      `;
+    } else if (type === 'peer') {
+      const inputs = data.peer_eval_inputs;
+      title = `${profile.subject} 동료평가서 (${profile.name} 관찰)`;
+      content = `
+        <h1>${title}</h1>
+        <h2>1. 관찰 활동 맥락</h2>
+        <p>${inputs.context}</p>
+        <h2>2. 주요 관찰 행동</h2>
+        <p>${inputs.actions}</p>
+        <h2>3. 팀 기여도 및 역량</h2>
+        <p>${inputs.contribution}</p>
+        <h2>4. 총평 및 피드백</h2>
+        <p>${inputs.feedback}</p>
+      `;
+    } else if (type === 'inquiry_report') {
+      const inputs = data.inquiry_report_inputs;
+      title = `[탐구보고서] ${profile.activityName}`;
+      content = `
+        <h1>${title}</h1>
+        <table border="1" style="border-collapse: collapse; width: 100%; border: 0.15mm solid black; margin-bottom: 20px;">
+          <tr><th>분야</th><td>${inputs.field}</td><th>연구팀</th><td>${inputs.groupDetails}</td></tr>
+        </table>
+        <h2>Ⅰ. 서론</h2>
+        <h3>1. 탐구 목적</h3><p>${inputs.purpose}</p>
+        <h2>Ⅱ. 본론</h2>
+        <h3>1. 주요 탐구 내용</h3><p>${inputs.mainContent}</p>
+        <h2>Ⅲ. 결론</h2>
+        <h3>1. 요약 및 제언</h3><p>${inputs.conclusion}</p>
+        <h2>Ⅳ. 참고문헌</h2>
+        <p>${inputs.references}</p>
+      `;
+    } else {
+      const inputs = data.inquiry_plan_inputs;
+      title = `[탐구계획서] ${inputs.finalTopic}`;
+      content = `
+        <h1>${title}</h1>
+        <h2>1. 탐구 주제</h2><p>${inputs.finalTopic}</p>
+        <h2>2. 탐구 동기</h2><p>${inputs.motivation}</p>
+        <h2>3. 탐구 방법</h2><p>${inputs.methods}</p>
+        <h2>4. 예상 결과</h2><p>${inputs.expectedResult}</p>
+      `;
+    }
+
+    return {
+      form_fill: { title, content },
+      print_view: content.replace(/<[^>]*>?/gm, '\n').trim()
+    };
   }
 }
 

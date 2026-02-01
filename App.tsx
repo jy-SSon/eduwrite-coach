@@ -163,8 +163,9 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AIResponse | null>(null);
   const [keySelected, setKeySelected] = useState<boolean>(true);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   
-  // New States for Portfolio & User
+  // States for Portfolio & User
   const [user, setUser] = useState<User | null>(portfolioService.getCurrentUser());
   const [view, setView] = useState<'main' | 'portfolio' | 'settings'>('main');
   const [showAuth, setShowAuth] = useState(false);
@@ -172,6 +173,11 @@ const App: React.FC = () => {
   const [savedDocId, setSavedDocId] = useState<string | null>(null);
 
   useEffect(() => {
+    // Sync online status
+    const updateOnlineStatus = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+
     const checkKey = async () => {
       const aistudio = (window as any).aistudio;
       if (aistudio) {
@@ -180,6 +186,11 @@ const App: React.FC = () => {
       }
     };
     checkKey();
+
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
+    };
   }, []);
 
   const [profile, setProfile] = useState<StudentProfile>({
@@ -243,7 +254,8 @@ const App: React.FC = () => {
 
   const handleGenerate = async () => {
     const aistudio = (window as any).aistudio;
-    if (!keySelected && aistudio) {
+    // Only check key if online
+    if (isOnline && !keySelected && aistudio) {
       const confirmed = await aistudio.hasSelectedApiKey();
       if (!confirmed) {
         await handleOpenKeyDialog();
@@ -275,7 +287,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Portfolio Actions
   const handleSaveToPortfolio = () => {
     if (!user) {
       setShowAuth(true);
@@ -317,10 +328,16 @@ const App: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 flex flex-col min-h-screen">
       <header className="mb-6 flex flex-col items-center">
-        <div className="w-full flex justify-end gap-4 mb-4">
+        <div className="w-full flex justify-between items-center mb-4">
+          <div className="flex items-center gap-2">
+             <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-amber-500 animate-pulse'}`}></span>
+             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+               {isOnline ? 'Online Mode' : 'Offline Mode (Local Engine)'}
+             </span>
+          </div>
           {user ? (
             <div className="flex items-center gap-3">
-              <span className="text-xs font-bold text-slate-600">✨ {user.nickname}님 환영합니다</span>
+              <span className="text-xs font-bold text-slate-600">✨ {user.nickname}님</span>
               <button onClick={() => setView('portfolio')} className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full">마이 포트폴리오</button>
               <button onClick={handleLogout} className="text-xs font-bold text-slate-400">로그아웃</button>
             </div>
@@ -428,7 +445,7 @@ const App: React.FC = () => {
                 loading ? 'bg-indigo-300' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'
               }`}
             >
-              {loading ? "AI 문장 품질 점검 중..." : "정식 문서 생성하기 ✨"}
+              {loading ? "기록 생성 중..." : isOnline ? "AI 문장 품질 생성하기 ✨" : "오프라인 모드 생성하기 💾"}
             </button>
           </div>
         </div>
@@ -438,7 +455,7 @@ const App: React.FC = () => {
           <div className="flex justify-between items-center mb-4 print:hidden">
             <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2">
               <span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>
-              문서 미리보기
+              문서 미리보기 {!isOnline && <span className="text-[10px] text-amber-600 font-bold ml-1">(오프라인 본문)</span>}
             </h2>
             {result && (
               <div className="flex gap-2">
@@ -460,6 +477,7 @@ const App: React.FC = () => {
               <div className="flex-grow flex flex-col items-center justify-center text-slate-300 p-12 text-center">
                 <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mb-4 text-2xl">🖋️</div>
                 <p className="text-sm font-medium">가이드에 맞춰 내용을 입력해 주세요.</p>
+                <p className="text-[10px] text-slate-400 mt-2">인터넷 연결이 없어도 기본 서식 생성이 가능합니다.</p>
               </div>
             )}
 
@@ -480,7 +498,7 @@ const App: React.FC = () => {
                   <div dangerouslySetInnerHTML={{ __html: result.form_fill.content }} />
                 </div>
                 
-                {/* Result Action Buttons (Newly Added) */}
+                {/* Result Action Buttons */}
                 <div className="mt-12 border-t pt-8 grid grid-cols-2 md:grid-cols-4 gap-4 print:hidden">
                    <button 
                      onClick={handleSaveToPortfolio}
@@ -537,7 +555,6 @@ const App: React.FC = () => {
       />}
 
       <style>{`
-        /* 정식 서식용 CSS */
         .document-container { font-family: 'Batang', 'Malgun Gothic', serif; }
         .document-container h1 { font-size: 20pt; font-weight: bold; text-align: center; margin-bottom: 2rem; border-bottom: 2px solid #000; padding-bottom: 1rem; }
         .document-container h2 { font-size: 16pt; font-weight: bold; margin-top: 2rem; margin-bottom: 1rem; color: #1e293b; }
